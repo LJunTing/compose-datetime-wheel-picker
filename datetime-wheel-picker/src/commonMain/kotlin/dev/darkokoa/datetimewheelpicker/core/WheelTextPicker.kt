@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -32,6 +34,7 @@ fun WheelTextPicker(
   texts: List<String>,
   rowCount: Int,
   style: TextStyle = MaterialTheme.typography.titleMedium,
+  lazyListState: LazyListState = rememberLazyListState(startIndex),
   color: Color = LocalContentColor.current,
   selectorProperties: SelectorProperties = WheelPickerDefaults.selectorProperties(),
   onScrollFinished: (snappedIndex: Int) -> Int? = { null },
@@ -42,6 +45,7 @@ fun WheelTextPicker(
     size = size,
     count = texts.size,
     rowCount = rowCount,
+    lazyListState = lazyListState,
     selectorProperties = selectorProperties,
     onScrollFinished = onScrollFinished
   ) { index ->
@@ -68,6 +72,7 @@ internal fun WheelTextPickerWithSuffix(
   suffixStyle: TextStyle = style,
   suffixColor: Color = color,
   textToSuffixSpacing: Dp = 8.dp,
+  lazyListState: LazyListState = rememberLazyListState(startIndex),
   selectorProperties: SelectorProperties = WheelPickerDefaults.selectorProperties(),
   onScrollFinished: (snappedIndex: Int) -> Int? = { null },
 ) {
@@ -100,6 +105,7 @@ internal fun WheelTextPickerWithSuffix(
       size = size,
       count = texts.size,
       rowCount = rowCount,
+      lazyListState = lazyListState,
       selectorProperties = selectorProperties,
       onScrollFinished = onScrollFinished
     ) { index ->

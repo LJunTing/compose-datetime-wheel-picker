@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -22,6 +24,7 @@ import dev.darkokoa.datetimewheelpicker.core.format.DateFormatter
 import dev.darkokoa.datetimewheelpicker.core.format.MonthDisplayStyle
 import dev.darkokoa.datetimewheelpicker.core.format.dateFormatter
 import dev.darkokoa.datetimewheelpicker.rememberStrings
+import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.number
 
@@ -49,7 +52,11 @@ internal fun CJKWheelDatePicker(
 
   val itemWidth = Dp.Infinity
 
-  var snappedDate by remember { mutableStateOf(startDate) }
+    // 使用 MutableState 保存当前日期，并确保初始值在范围内
+    val snappedDateM = remember {
+        mutableStateOf(startDate.coerceIn(minDate, maxDate))
+    }
+    val snappedDate = snappedDateM.value
 
   val dayOfMonths =
     rememberFormattedDayOfMonths(snappedDate.month.number, snappedDate.year, dateFormatter)
@@ -57,6 +64,12 @@ internal fun CJKWheelDatePicker(
   val months = rememberFormattedMonths(Dp.Hairline, dateFormatter)
 
   val years = rememberFormattedYears(yearsRange, dateFormatter)
+
+    val scop= rememberCoroutineScope ()
+
+    val dayLazyListState: LazyListState = rememberLazyListState(dayOfMonths?.find { it.value == startDate.day }?.index ?: 0)
+    val monthLazyListState: LazyListState = rememberLazyListState(months?.find { it.value == startDate.month.number }?.index ?: 0)
+    val yearLazyListState: LazyListState = rememberLazyListState(years?.find { it.value == startDate.year }?.index ?: 0)
 
   Box(modifier = modifier, contentAlignment = Alignment.Center) {
     if (selectorProperties.enabled().value) {
@@ -87,30 +100,23 @@ internal fun CJKWheelDatePicker(
               selectorProperties = WheelPickerDefaults.selectorProperties(
                 enabled = false
               ),
+                lazyListState = dayLazyListState,
               startIndex = dayOfMonths.find { it.value == startDate.day }?.index ?: 0,
               onScrollFinished = { snappedIndex ->
-                val newDayOfMonth = dayOfMonths.find { it.index == snappedIndex }?.value
+                  val targetDay = dayOfMonths.find { it.index == snappedIndex }?.value ?: snappedDate.day
+                  // 修正日期：如果该月没有这一天，withDayOfMonth 会自动抛出异常或处理，
+                  // 这里建议先 coerce，确保日期合法
+                  val newDate = snappedDate.withDayOfMonth(
+                      targetDay.coerceIn(1, snappedDate.lengthOfMonth)
+                                                          ).coerceIn(minDate, maxDate)
 
-                newDayOfMonth?.let {
-                  val newDate = snappedDate.withDayOfMonth(newDayOfMonth)
+                  snappedDateM.value = newDate
 
-                  if (!newDate.isBefore(minDate) && !newDate.isAfter(maxDate)) {
-                    snappedDate = newDate
+                  val finalIndex = dayOfMonths.find { it.value == newDate.day }?.index
+                  finalIndex?.let {
+                      onSnappedDate(SnappedDate.DayOfMonth(newDate, it))
                   }
-
-                  val newIndex = dayOfMonths.find { it.value == snappedDate.day }?.index
-
-                  newIndex?.let {
-                    onSnappedDate(
-                      SnappedDate.DayOfMonth(
-                        localDate = snappedDate,
-                        index = newIndex
-                      )
-                    )?.let { return@WheelTextPickerWithSuffix it }
-                  }
-                }
-
-                return@WheelTextPickerWithSuffix dayOfMonths.find { it.value == snappedDate.day }?.index
+                  return@WheelTextPickerWithSuffix finalIndex
               }
             )
           }
@@ -131,29 +137,30 @@ internal fun CJKWheelDatePicker(
               selectorProperties = WheelPickerDefaults.selectorProperties(
                 enabled = false
               ),
+                lazyListState = monthLazyListState,
               startIndex = months.find { it.value == startDate.month.number }?.index ?: 0,
               onScrollFinished = { snappedIndex ->
-                val newMonth = months.find { it.index == snappedIndex }?.value
-                newMonth?.let {
-                  val newDate = snappedDate.withMonthNumber(newMonth)
+                  val targetMonth = months.find { it.index == snappedIndex }?.value ?: snappedDate.month.number
 
-                  if (!newDate.isBefore(minDate) && !newDate.isAfter(maxDate)) {
-                    snappedDate = newDate
+                  // 处理月份切换时可能的天数溢出（例如从31号切到2月）
+                  val tempDate = snappedDate.withMonthNumber(targetMonth)
+                  val newDate = tempDate.withDayOfMonth(
+                      snappedDate.day.coerceIn(1, tempDate.lengthOfMonth)
+                                                       ).coerceIn(minDate, maxDate)
+
+                  snappedDateM.value = newDate
+
+                  val finalIndex = months.find { it.value == newDate.month.number }?.index
+                  finalIndex?.let {
+                      onSnappedDate(SnappedDate.Month(newDate, it))
                   }
 
-                  val newIndex = months.find { it.value == snappedDate.month.number }?.index
-
-                  newIndex?.let {
-                    onSnappedDate(
-                      SnappedDate.Month(
-                        localDate = snappedDate,
-                        index = newIndex
-                      )
-                    )?.let { return@WheelTextPickerWithSuffix it }
+                  dayOfMonths.find { it.value == newDate.day }?.index?.let {day->
+                      scop.launch {
+                          dayLazyListState.scrollToItem(day)
+                      }
                   }
-                }
-
-                return@WheelTextPickerWithSuffix months.find { it.value == snappedDate.month.number }?.index
+                  return@WheelTextPickerWithSuffix finalIndex
               }
             )
           }
@@ -175,30 +182,34 @@ internal fun CJKWheelDatePicker(
                 selectorProperties = WheelPickerDefaults.selectorProperties(
                   enabled = false
                 ),
+                  lazyListState = yearLazyListState,
                 startIndex = years.find { it.value == startDate.year }?.index ?: 0,
                 onScrollFinished = { snappedIndex ->
-                  val newYear = years.find { it.index == snappedIndex }?.value
+                    val targetYear = years.find { it.index == snappedIndex }?.value ?: snappedDate.year
 
-                  newYear?.let {
-                    val newDate = snappedDate.withYear(newYear)
+                    val tempDate = snappedDate.withYear(targetYear)
+                    val newDate = tempDate.withDayOfMonth(
+                        snappedDate.day.coerceIn(1, tempDate.lengthOfMonth)
+                                                         ).coerceIn(minDate, maxDate)
 
-                    if (!newDate.isBefore(minDate) && !newDate.isAfter(maxDate)) {
-                      snappedDate = newDate
+                    snappedDateM.value = newDate
+
+                    val finalIndex=years.find { it.value == newDate.year }?.index?.let {
+                        onSnappedDate(SnappedDate.Year(newDate, it))
                     }
 
-                    val newIndex = years.find { it.value == snappedDate.year }?.index
-
-                    newIndex?.let {
-                      onSnappedDate(
-                        SnappedDate.Year(
-                          localDate = snappedDate,
-                          index = newIndex
-                        )
-                      )?.let { return@WheelTextPickerWithSuffix it }
+                    months.find { it.value == newDate.month.number }?.index?.let { month->
+                        scop.launch {
+                            monthLazyListState.scrollToItem(month)
+                        }
                     }
-                  }
 
-                  return@WheelTextPickerWithSuffix years.find { it.value == snappedDate.year }?.index
+                    dayOfMonths.find { it.value == newDate.day }?.index?.let {day->
+                        scop.launch {
+                            dayLazyListState.scrollToItem(day)
+                        }
+                    }
+                    return@WheelTextPickerWithSuffix finalIndex
                 }
               )
             }
@@ -208,3 +219,12 @@ internal fun CJKWheelDatePicker(
     }
   }
 }
+
+
+// 扩展属性：获取当前月份的天数
+internal val LocalDate.lengthOfMonth: Int
+    get() = when (monthNumber) {
+        2 -> if ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)) 29 else 28
+        4, 6, 9, 11 -> 30
+        else -> 31
+    }

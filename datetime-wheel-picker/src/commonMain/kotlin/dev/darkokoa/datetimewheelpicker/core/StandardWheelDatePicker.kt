@@ -3,6 +3,8 @@ package dev.darkokoa.datetimewheelpicker.core
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -19,6 +21,7 @@ import dev.darkokoa.datetimewheelpicker.core.format.DateField
 import dev.darkokoa.datetimewheelpicker.core.format.DateFormatter
 import dev.darkokoa.datetimewheelpicker.core.format.MonthDisplayStyle
 import dev.darkokoa.datetimewheelpicker.core.format.dateFormatter
+import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.number
 
@@ -44,7 +47,11 @@ internal fun StandardWheelDatePicker(
   val itemCount = if (yearsRange == null) 2 else 3
   val itemWidth = size.width / itemCount
 
-  var snappedDate by remember { mutableStateOf(startDate) }
+    // 使用 MutableState 保存当前日期，并确保初始值在范围内
+    val snappedDateM = remember {
+        mutableStateOf(startDate.coerceIn(minDate, maxDate))
+    }
+    val snappedDate = snappedDateM.value
 
   val dayOfMonths =
     rememberFormattedDayOfMonths(snappedDate.month.number, snappedDate.year, dateFormatter)
@@ -52,6 +59,12 @@ internal fun StandardWheelDatePicker(
   val months = rememberFormattedMonths(size.width, dateFormatter)
 
   val years = rememberFormattedYears(yearsRange, dateFormatter)
+
+    val scop= rememberCoroutineScope ()
+
+    val dayLazyListState: LazyListState = rememberLazyListState(dayOfMonths?.find { it.value == startDate.day }?.index ?: 0)
+    val monthLazyListState: LazyListState = rememberLazyListState(months?.find { it.value == startDate.month.number }?.index ?: 0)
+    val yearLazyListState: LazyListState = rememberLazyListState(years?.find { it.value == startDate.year }?.index ?: 0)
 
   Box(modifier = modifier, contentAlignment = Alignment.Center) {
     if (selectorProperties.enabled().value) {
@@ -81,28 +94,20 @@ internal fun StandardWheelDatePicker(
               ),
               startIndex = dayOfMonths.find { it.value == startDate.day }?.index ?: 0,
               onScrollFinished = { snappedIndex ->
-                val newDayOfMonth = dayOfMonths.find { it.index == snappedIndex }?.value
+                  val targetDay = dayOfMonths.find { it.index == snappedIndex }?.value ?: snappedDate.day
+                  // 修正日期：如果该月没有这一天，withDayOfMonth 会自动抛出异常或处理，
+                  // 这里建议先 coerce，确保日期合法
+                  val newDate = snappedDate.withDayOfMonth(
+                      targetDay.coerceIn(1, snappedDate.lengthOfMonth)
+                                                          ).coerceIn(minDate, maxDate)
 
-                newDayOfMonth?.let {
-                  val newDate = snappedDate.withDayOfMonth(newDayOfMonth)
+                  snappedDateM.value = newDate
 
-                  if (!newDate.isBefore(minDate) && !newDate.isAfter(maxDate)) {
-                    snappedDate = newDate
+                  val finalIndex = dayOfMonths.find { it.value == newDate.day }?.index
+                  finalIndex?.let {
+                      onSnappedDate(SnappedDate.DayOfMonth(newDate, it))
                   }
-
-                  val newIndex = dayOfMonths.find { it.value == snappedDate.day }?.index
-
-                  newIndex?.let {
-                    onSnappedDate(
-                      SnappedDate.DayOfMonth(
-                        localDate = snappedDate,
-                        index = newIndex
-                      )
-                    )?.let { return@WheelTextPicker it }
-                  }
-                }
-
-                return@WheelTextPicker dayOfMonths.find { it.value == snappedDate.day }?.index
+                  return@WheelTextPicker finalIndex
               }
             )
           }
@@ -122,33 +127,27 @@ internal fun StandardWheelDatePicker(
               ),
               startIndex = months.find { it.value == startDate.month.number }?.index ?: 0,
               onScrollFinished = { snappedIndex ->
-                val newMonth = months.find { it.index == snappedIndex }?.value
-                newMonth?.let {
-                  val newDate = snappedDate.withMonthNumber(newMonth)
+                  val targetMonth = months.find { it.index == snappedIndex }?.value ?: snappedDate.month.number
 
-                  if (!newDate.isBefore(minDate) && !newDate.isAfter(maxDate)) {
-                    snappedDate = newDate
+                  // 处理月份切换时可能的天数溢出（例如从31号切到2月）
+                  val tempDate = snappedDate.withMonthNumber(targetMonth)
+                  val newDate = tempDate.withDayOfMonth(
+                      snappedDate.day.coerceIn(1, tempDate.lengthOfMonth)
+                                                       ).coerceIn(minDate, maxDate)
+
+                  snappedDateM.value = newDate
+
+                  val finalIndex = months.find { it.value == newDate.month.number }?.index
+                  finalIndex?.let {
+                      onSnappedDate(SnappedDate.Month(newDate, it))
                   }
 
-//                  dayOfMonths = calculateDayOfMonths(
-//                    snappedDate.month.number,
-//                    snappedDate.year,
-//                    dateFormatter.formatDay
-//                  )
-
-                  val newIndex = months.find { it.value == snappedDate.month.number }?.index
-
-                  newIndex?.let {
-                    onSnappedDate(
-                      SnappedDate.Month(
-                        localDate = snappedDate,
-                        index = newIndex
-                      )
-                    )?.let { return@WheelTextPicker it }
+                  dayOfMonths.find { it.value == newDate.day }?.index?.let {day->
+                      scop.launch {
+                          dayLazyListState.scrollToItem(day)
+                      }
                   }
-                }
-
-                return@WheelTextPicker months.find { it.value == snappedDate.month.number }?.index
+                  return@WheelTextPicker finalIndex
               }
             )
           }
@@ -169,34 +168,31 @@ internal fun StandardWheelDatePicker(
                 ),
                 startIndex = years.find { it.value == startDate.year }?.index ?: 0,
                 onScrollFinished = { snappedIndex ->
-                  val newYear = years.find { it.index == snappedIndex }?.value
+                    val targetYear = years.find { it.index == snappedIndex }?.value ?: snappedDate.year
 
-                  newYear?.let {
-                    val newDate = snappedDate.withYear(newYear)
+                    val tempDate = snappedDate.withYear(targetYear)
+                    val newDate = tempDate.withDayOfMonth(
+                        snappedDate.day.coerceIn(1, tempDate.lengthOfMonth)
+                                                         ).coerceIn(minDate, maxDate)
 
-                    if (!newDate.isBefore(minDate) && !newDate.isAfter(maxDate)) {
-                      snappedDate = newDate
+                    snappedDateM.value = newDate
+
+                    val finalIndex=years.find { it.value == newDate.year }?.index?.let {
+                        onSnappedDate(SnappedDate.Year(newDate, it))
                     }
 
-//                    dayOfMonths = calculateDayOfMonths(
-//                      snappedDate.month.number,
-//                      snappedDate.year,
-//                      dateFormatter.formatDay
-//                    )
-
-                    val newIndex = years.find { it.value == snappedDate.year }?.index
-
-                    newIndex?.let {
-                      onSnappedDate(
-                        SnappedDate.Year(
-                          localDate = snappedDate,
-                          index = newIndex
-                        )
-                      )?.let { return@WheelTextPicker it }
+                    months.find { it.value == newDate.month.number }?.index?.let { month->
+                        scop.launch {
+                            monthLazyListState.scrollToItem(month)
+                        }
                     }
-                  }
 
-                  return@WheelTextPicker years.find { it.value == snappedDate.year }?.index
+                    dayOfMonths.find { it.value == newDate.day }?.index?.let {day->
+                        scop.launch {
+                            dayLazyListState.scrollToItem(day)
+                        }
+                    }
+                    return@WheelTextPicker finalIndex
                 }
               )
             }
