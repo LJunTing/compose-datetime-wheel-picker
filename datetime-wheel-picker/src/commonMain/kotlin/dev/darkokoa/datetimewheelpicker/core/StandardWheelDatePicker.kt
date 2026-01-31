@@ -92,6 +92,7 @@ internal fun StandardWheelDatePicker(
               selectorProperties = WheelPickerDefaults.selectorProperties(
                 enabled = false
               ),
+                lazyListState = dayLazyListState,
               startIndex = dayOfMonths.find { it.value == startDate.day }?.index ?: 0,
               onScrollFinished = { snappedIndex ->
                   val targetDay = dayOfMonths.find { it.index == snappedIndex }?.value ?: snappedDate.day
@@ -125,6 +126,7 @@ internal fun StandardWheelDatePicker(
               selectorProperties = WheelPickerDefaults.selectorProperties(
                 enabled = false
               ),
+                lazyListState = monthLazyListState,
               startIndex = months.find { it.value == startDate.month.number }?.index ?: 0,
               onScrollFinished = { snappedIndex ->
                   val targetMonth = months.find { it.index == snappedIndex }?.value ?: snappedDate.month.number
@@ -166,6 +168,7 @@ internal fun StandardWheelDatePicker(
                 selectorProperties = WheelPickerDefaults.selectorProperties(
                   enabled = false
                 ),
+                  lazyListState = yearLazyListState,
                 startIndex = years.find { it.value == startDate.year }?.index ?: 0,
                 onScrollFinished = { snappedIndex ->
                     val targetYear = years.find { it.index == snappedIndex }?.value ?: snappedDate.year
